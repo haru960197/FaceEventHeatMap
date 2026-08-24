@@ -1,0 +1,94 @@
+# FaceEventHeatmap 設定ファイル
+
+# 入力ファイル設定
+input:
+  input_dir: "input"
+  events_file: "events.csv"
+  sync_log_file: "sync_log.csv"
+  sync_params_file: "sync_params.json"
+  landmark_file: "landmark.csv"
+  transform_matrix_file: "transform_matrix.json"
+  calibration_file: "calibration.json"
+  # オプション: RGB動画または画像連番ディレクトリ (RGBオーバーレイ時に使用)
+  rgb_source: "" # 例: "input/rgb_video.mp4" または "input/rgb_images"
+
+# 出力設定
+output:
+  output_dir: "output"
+  save_images: true               # 連番PNG画像を保存するか
+  save_video: true                # MP4動画を保存するか
+  video_fps: 30                   # 出力動画のFPS
+  video_filename: "face_event_heatmap.mp4"
+  save_total_heatmap: true        # 全期間の総累積ヒートマップを保存するか
+
+# 時間窓設定
+timing:
+  # 時間窓の長さ M (ms): [t - window_ms, t] のイベントを蓄積
+  window_ms: 100.0
+  # フレーム生成タイミング:
+  # "sync_log": sync_log.csv の各RGBフレーム時刻 t を使用
+  # "stride": 一定間隔 (stride_ms) で生成
+  timing_mode: "sync_log"
+  stride_ms: 33.33
+
+# 出力モード設定
+modes:
+  # 標準顔 Canonical 2D テンプレート (正面顔メッシュ) へのマッピング
+  canonical_2d: true
+  # 標準顔 UV 展開図へのマッピング
+  uv_map: false
+  # 実 RGB 画像へのオーバーレイ (rgb_source またはランドマーク背景が必要)
+  rgb_overlay: false
+
+# 標準顔 (Canonical) テンプレート設定
+canonical_space:
+  width: 512
+  height: 512
+  # テンプレートスタイル: canonical_2d (正面顔) または uv_map (UV展開図)
+  template_mode: "canonical_2d"
+  # 背景色 (B, G, R)
+  bg_color: [20, 20, 25]
+  # メッシュ線色 (B, G, R)
+  mesh_line_color: [60, 60, 75]
+  # ランドマーク点色 (B, G, R)
+  landmark_color: [90, 90, 110]
+  draw_landmarks: false
+
+# ヒートマップ描画・カラーリング設定
+visualization:
+  # カラーマップ: turbo, viridis, jet, inferno, magma, plasma
+  colormap: "turbo"
+  # ガウシアンブラーのシグマ (ピクセル単位, 0でブラー無効)
+  blur_sigma: 3.0
+  # 背景との合成アルファ値 (0.0: 背景のみ, 1.0: ヒートマップ完全不透明)
+  alpha: 0.70
+  # カラーバー (凡例) を描画するか
+  draw_colorbar: true
+  # タイムスタンプ・情報テキストを描画するか
+  draw_info_overlay: true
+
+# 正規化設定
+normalization:
+  # 正規化モード:
+  # "percentile": 各フレームの非ゼロ上位 percentile_val % を 1.0 に設定 (ホットピクセル耐性高)
+  # "max": 各フレームの最大値を 1.0 に設定
+  # "fixed": 全フレーム共通の固定最大値 fixed_vmax を使用
+  mode: "percentile"
+  percentile_val: 99.0
+  # 最小表示閾値 (この割合以下の微小値は透明化)
+  min_threshold: 0.05
+  fixed_vmax: 50.0
+
+# イベント極性設定
+polarity:
+  # "all": 極性合算
+  # "separate": pol0, pol1 を個別に出力
+  # "both": all と separate の両方を出力
+  export_mode: "all"
+
+# カメラ解像度設定
+camera:
+  event_width: 320
+  event_height: 320
+  rgb_width: 1920
+  rgb_height: 1080
