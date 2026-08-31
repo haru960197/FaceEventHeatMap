@@ -96,7 +96,11 @@ normalization:
   # "max": 各フレームの最大値を 1.0 に設定
   # "fixed": 全フレーム共通の固定最大値 fixed_vmax を使用
   mode: "percentile"
-  percentile_val: 99.0
+  percentile_val: 98.5
+  # スケール変換方式: "sqrt" (平方根圧縮, 表情筋の階調表現に最適), "log" (対数圧縮), "linear" (線形)
+  scale_type: "sqrt"
+  # 静止フレームで vmax が下がりすぎて真っ赤になるのを防止する下限基準値 (events/px)
+  min_vmax_floor: 1.5
   # 最小表示閾値 (この割合以下の微小値は透明化)
   min_threshold: 0.05
   fixed_vmax: 50.0

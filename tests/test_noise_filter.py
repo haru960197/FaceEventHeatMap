@@ -102,6 +102,35 @@ class TestNoiseFilter(unittest.TestCase):
         filtered = apply_spatial_median_filter(arr, ksize=3)
         self.assertEqual(filtered[3, 3], 0.0)
 
+    def test_normalize_heatmap_adaptive(self):
+        from src.visualizer import normalize_heatmap
+
+        # 静止時（微小イベントのみ: 最大 0.2）
+        quiet_map = np.zeros((10, 10), dtype=np.float32)
+        quiet_map[2, 2] = 0.2
+        quiet_map[3, 3] = 0.1
+
+        # min_vmax_floor=1.5 により、静止時に 1.0 (赤) にならないこと
+        norm_quiet, vmax_quiet = normalize_heatmap(
+            quiet_map, mode="percentile", percentile_val=98.5, scale_type="sqrt", min_vmax_floor=1.5
+        )
+        self.assertEqual(vmax_quiet, 1.5)
+        # sqrt(0.2 / 1.5) = ~0.365 (0.8以上の赤にはならない)
+        self.assertTrue(np.all(norm_quiet < 0.5))
+
+        # 笑顔時（激しい動き: 最大 4.0）
+        active_map = np.zeros((10, 10), dtype=np.float32)
+        active_map[5, 5] = 4.0
+        active_map[6, 6] = 1.0  # 中程度の動き (ほうれい線等)
+
+        norm_active, vmax_active = normalize_heatmap(
+            active_map, mode="percentile", percentile_val=98.5, scale_type="sqrt", min_vmax_floor=1.5
+        )
+        # 激しい動きは 1.0 (赤) に到達
+        self.assertEqual(norm_active[5, 5], 1.0)
+        # 中程度の動き (1.0) も sqrt スケールにより sqrt(1.0 / 4.0) = 0.5 となり綺麗に色づく
+        self.assertGreater(norm_active[6, 6], 0.4)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -138,7 +138,9 @@ filter:
 # 正規化設定
 normalization:
   mode: "percentile"         # "percentile" (ホットピクセル除外), "max", "fixed"
-  percentile_val: 99.0       # 上位パーセンタイル値
+  percentile_val: 98.5       # 上位パーセンタイル値
+  scale_type: "sqrt"         # "sqrt" (平方根圧縮, 表情筋に最適), "log" (対数圧縮), "linear" (線形)
+  min_vmax_floor: 1.5        # 静止フレームでの下限基準値 (静止時の赤色化を防止)
   min_threshold: 0.05        # 最小表示閾値
 ```
 

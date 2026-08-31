@@ -41,9 +41,11 @@ def apply_gaussian_blur(count_map: np.ndarray, sigma: float = 3.0) -> np.ndarray
 def normalize_heatmap(
     density_map: np.ndarray,
     mode: str = "percentile",
-    percentile_val: float = 99.0,
+    percentile_val: float = 98.5,
     min_threshold: float = 0.05,
     fixed_vmax: Optional[float] = None,
+    scale_type: str = "sqrt",
+    min_vmax_floor: float = 1.5,
 ) -> Tuple[np.ndarray, float]:
     """
     密度マップを [0.0, 1.0] の範囲に正規化する。
@@ -55,11 +57,15 @@ def normalize_heatmap(
     mode : str
         "percentile", "max", "fixed"
     percentile_val : float
-        パーセンタイル値 (例: 99.0)
+        パーセンタイル値 (例: 98.5)
     min_threshold : float
         最小表示閾値（これ以下の値は 0.0 にカット）
     fixed_vmax : float, optional
         mode="fixed" の場合の最大値
+    scale_type : str
+        "linear" (線形), "sqrt" (平方根圧縮), "log" (対数圧縮)
+    min_vmax_floor : float
+        静止フレームで vmax が不当に小さくなるのを防ぐ下限基準値 (events/px)
 
     Returns
     -------
@@ -73,16 +79,29 @@ def normalize_heatmap(
     if mode == "fixed" and fixed_vmax is not None and fixed_vmax > 0:
         vmax = float(fixed_vmax)
     elif mode == "percentile":
-        vmax = float(np.percentile(non_zero, percentile_val))
+        raw_vmax = float(np.percentile(non_zero, percentile_val))
+        vmax = max(raw_vmax, float(min_vmax_floor))
         if vmax <= 0:
             vmax = float(np.max(non_zero))
     else:  # max
-        vmax = float(np.max(non_zero))
+        raw_vmax = float(np.max(non_zero))
+        vmax = max(raw_vmax, float(min_vmax_floor))
 
     if vmax <= 0:
         vmax = 1.0
 
-    norm_map = np.clip(density_map / vmax, 0.0, 1.0)
+    # スケール変換 (linear, sqrt, log)
+    clamped_density = np.maximum(density_map, 0.0)
+    if scale_type == "log":
+        # log(1 + d) / log(1 + vmax)
+        norm_map = np.log1p(clamped_density) / np.log1p(vmax)
+    elif scale_type == "sqrt":
+        # sqrt(d) / sqrt(vmax)
+        norm_map = np.sqrt(clamped_density) / np.sqrt(vmax)
+    else:  # linear
+        norm_map = clamped_density / vmax
+
+    norm_map = np.clip(norm_map, 0.0, 1.0)
 
     # 閾値処理: min_threshold 未満は 0.0 にして背景を見やすく
     norm_map[norm_map < min_threshold] = 0.0

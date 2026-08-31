@@ -285,9 +285,11 @@ def main():
     spatial_ksize = int(spatial_cfg.get("median_ksize", 3))
 
     norm_mode = config["normalization"].get("mode", "percentile")
-    percentile_val = float(config["normalization"].get("percentile_val", 99.0))
+    percentile_val = float(config["normalization"].get("percentile_val", 98.5))
     min_thresh = float(config["normalization"].get("min_threshold", 0.05))
     fixed_vmax = float(config["normalization"].get("fixed_vmax", 50.0))
+    scale_type = config["normalization"].get("scale_type", "sqrt")
+    min_vmax_floor = float(config["normalization"].get("min_vmax_floor", 1.5))
 
     # ランドマークフレームの参照用リスト
     available_lm_frames = sorted(landmarks_dict.keys())
@@ -351,13 +353,15 @@ def main():
         # 密度平滑化
         density_uv = apply_gaussian_blur(uv_raw, sigma=blur_sigma)
 
-        # 正規化
+        # 正規化 (適応型非線形スケール & 下限クランプ)
         norm_uv, vmax_uv = normalize_heatmap(
             density_map=density_uv,
             mode=norm_mode,
             percentile_val=percentile_val,
             min_threshold=min_thresh,
             fixed_vmax=fixed_vmax,
+            scale_type=scale_type,
+            min_vmax_floor=min_vmax_floor,
         )
 
         # カラーマップ適用
@@ -425,6 +429,8 @@ def main():
                 mode=norm_mode,
                 percentile_val=percentile_val,
                 min_threshold=min_thresh,
+                scale_type=scale_type,
+                min_vmax_floor=min_vmax_floor,
             )
             color_rgb_bgr, alpha_mask_rgb = colorize_heatmap(norm_rgb, colormap_name=cmap_name)
             rendered_rgb = blend_heatmap_with_background(
@@ -470,6 +476,8 @@ def main():
             mode="percentile",
             percentile_val=98.0,
             min_threshold=0.01,
+            scale_type="sqrt",
+            min_vmax_floor=5.0,
         )
         total_color_bgr, total_alpha = colorize_heatmap(total_norm, colormap_name=cmap_name)
         total_rendered = blend_heatmap_with_background(
