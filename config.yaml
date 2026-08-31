@@ -67,6 +67,28 @@ visualization:
   # タイムスタンプ・情報テキストを描画するか
   draw_info_overlay: true
 
+# ノイズ抑制・ホットピクセルフィルタ設定
+filter:
+  # 統計的ホットピクセル (異常振動・定常異常発火) 検出・除去
+  hot_pixel:
+    enabled: true
+    ratio_threshold: 3.5          # 近傍平均に対する比率閾値 (3.0〜5.0 推奨)
+    min_count: 500                # 判定対象とする最小累積イベント数
+    max_rate_hz: 800.0            # 許容最大発火率 (Hz)
+    border_margin: 2              # センサー最外周マージン (px, 0で無効)
+    save_mask_image: true         # output/hot_pixels_mask.png を保存するか
+    save_report_csv: true         # output/hot_pixels_report.csv を保存するか
+
+  # 不応期フィルタ (高周波振動・連射ノイズの抑制)
+  refractory:
+    enabled: true
+    period_us: 500.0              # 不応期 (マイクロ秒, 500us = 0.5ms)
+
+  # 空間ノイズ抑制 (ヒートマップ平滑化前の孤立スパイク除去)
+  spatial:
+    enabled: true
+    median_ksize: 3               # メディアンフィルタのカーネルサイズ (3 または 0で無効)
+
 # 正規化設定
 normalization:
   # 正規化モード:
@@ -74,7 +96,11 @@ normalization:
   # "max": 各フレームの最大値を 1.0 に設定
   # "fixed": 全フレーム共通の固定最大値 fixed_vmax を使用
   mode: "percentile"
-  percentile_val: 99.0
+  percentile_val: 98.5
+  # スケール変換方式: "sqrt" (平方根圧縮, 表情筋の階調表現に最適), "log" (対数圧縮), "linear" (線形)
+  scale_type: "sqrt"
+  # 静止フレームで vmax が下がりすぎて真っ赤になるのを防止する下限基準値 (events/px)
+  min_vmax_floor: 1.5
   # 最小表示閾値 (この割合以下の微小値は透明化)
   min_threshold: 0.05
   fixed_vmax: 50.0

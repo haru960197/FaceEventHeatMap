@@ -34,6 +34,14 @@ from src.data_loader import (
     load_transform_matrix,
 )
 from src.heatmap_accumulator import HeatmapAccumulator
+from src.noise_filter import (
+    apply_refractory_filter,
+    apply_spatial_median_filter,
+    detect_hot_pixels,
+    filter_events_by_hot_pixels,
+    save_hot_pixel_report,
+    save_hot_pixel_visualization,
+)
 from src.uv_buffer import build_frame_buffers
 from src.visualizer import (
     apply_gaussian_blur,
@@ -81,6 +89,7 @@ def main():
         "--max-frames", type=int, default=None, help="Max frames to process (for quick testing)"
     )
     parser.add_argument("--no-video", action="store_true", help="Disable video generation")
+    parser.add_argument("--no-filter", action="store_true", help="Disable noise / hot pixel filtering")
     args = parser.parse_args()
 
     # 設定ロード
@@ -97,6 +106,11 @@ def main():
         config["visualization"]["colormap"] = args.colormap
     if args.no_video:
         config["output"]["save_video"] = False
+    if args.no_filter:
+        config.setdefault("filter", {})
+        config["filter"].setdefault("hot_pixel", {})["enabled"] = False
+        config["filter"].setdefault("refractory", {})["enabled"] = False
+        config["filter"].setdefault("spatial", {})["enabled"] = False
 
     input_dir = config["input"]["input_dir"]
     output_dir = config["output"]["output_dir"]
@@ -109,6 +123,11 @@ def main():
     rgb_out_dir = os.path.join(output_dir, "rgb_heatmaps")
     os.makedirs(uv_out_dir, exist_ok=True)
     os.makedirs(rgb_out_dir, exist_ok=True)
+
+    cam_w = int(config["camera"]["event_width"])
+    cam_h = int(config["camera"]["event_height"])
+    rgb_w = int(config["camera"]["rgb_width"])
+    rgb_h = int(config["camera"]["rgb_height"])
 
     # 1. 各種データの読み込み
     logger.info("=== 1. Loading Input Data ===")
@@ -125,6 +144,51 @@ def main():
     landmarks_dict = load_landmarks(landmark_path)
     rvec, tvec = load_transform_matrix(transform_path)
     intrinsics, distortion = load_calibration(calibration_path)
+
+    # 1.5 ノイズ抑制・ホットピクセルフィルタリング
+    filter_config = config.get("filter", {})
+    hot_cfg = filter_config.get("hot_pixel", {})
+    ref_cfg = filter_config.get("refractory", {})
+    spatial_cfg = filter_config.get("spatial", {})
+
+    if hot_cfg.get("enabled", True):
+        logger.info("=== 1.5 Applying Hot Pixel Filter ===")
+        hot_mask, hot_stats = detect_hot_pixels(
+            events_df=events_df,
+            image_width=cam_w,
+            image_height=cam_h,
+            ratio_threshold=float(hot_cfg.get("ratio_threshold", 3.5)),
+            min_count=int(hot_cfg.get("min_count", 500)),
+            max_rate_hz=float(hot_cfg.get("max_rate_hz", 800.0)),
+            border_margin=int(hot_cfg.get("border_margin", 2)),
+        )
+
+        if hot_cfg.get("save_mask_image", True):
+            mask_out_path = os.path.join(output_dir, "hot_pixels_mask.png")
+            save_hot_pixel_visualization(
+                hot_mask=hot_mask,
+                event_counts_2d=hot_stats["event_counts_2d"],
+                output_path=mask_out_path,
+            )
+
+        if hot_cfg.get("save_report_csv", True):
+            report_out_path = os.path.join(output_dir, "hot_pixels_report.csv")
+            save_hot_pixel_report(
+                hot_mask=hot_mask,
+                stats=hot_stats,
+                output_path=report_out_path,
+            )
+
+        events_df, _, _ = filter_events_by_hot_pixels(events_df, hot_mask)
+
+    if ref_cfg.get("enabled", True):
+        logger.info("=== 1.6 Applying Refractory Period Filter ===")
+        events_df, _, _ = apply_refractory_filter(
+            events_df=events_df,
+            refractory_period_us=float(ref_cfg.get("period_us", 500.0)),
+            image_width=cam_w,
+            image_height=cam_h,
+        )
 
     # RGB フレームリーダー (オプショナル)
     rgb_source = config["input"].get("rgb_source")
@@ -162,11 +226,6 @@ def main():
 
     # 3. HeatmapAccumulator の初期化
     logger.info("=== 3. Initializing Heatmap Accumulator ===")
-    cam_w = int(config["camera"]["event_width"])
-    cam_h = int(config["camera"]["event_height"])
-    rgb_w = int(config["camera"]["rgb_width"])
-    rgb_h = int(config["camera"]["rgb_height"])
-
     accumulator = HeatmapAccumulator(
         events_df=events_df,
         sync_A=sync_A,
@@ -222,10 +281,15 @@ def main():
     draw_cb = config["visualization"].get("draw_colorbar", True)
     draw_info = config["visualization"].get("draw_info_overlay", True)
 
+    do_spatial_filter = spatial_cfg.get("enabled", True)
+    spatial_ksize = int(spatial_cfg.get("median_ksize", 3))
+
     norm_mode = config["normalization"].get("mode", "percentile")
-    percentile_val = float(config["normalization"].get("percentile_val", 99.0))
+    percentile_val = float(config["normalization"].get("percentile_val", 98.5))
     min_thresh = float(config["normalization"].get("min_threshold", 0.05))
     fixed_vmax = float(config["normalization"].get("fixed_vmax", 50.0))
+    scale_type = config["normalization"].get("scale_type", "sqrt")
+    min_vmax_floor = float(config["normalization"].get("min_vmax_floor", 1.5))
 
     # ランドマークフレームの参照用リスト
     available_lm_frames = sorted(landmarks_dict.keys())
@@ -282,16 +346,22 @@ def main():
             update_total=True,
         )
 
-        # 密度平滑化
-        density_uv = apply_gaussian_blur(uv_counts["all"], sigma=blur_sigma)
+        uv_raw = uv_counts["all"]
+        if do_spatial_filter and spatial_ksize > 1:
+            uv_raw = apply_spatial_median_filter(uv_raw, ksize=spatial_ksize)
 
-        # 正規化
+        # 密度平滑化
+        density_uv = apply_gaussian_blur(uv_raw, sigma=blur_sigma)
+
+        # 正規化 (適応型非線形スケール & 下限クランプ)
         norm_uv, vmax_uv = normalize_heatmap(
             density_map=density_uv,
             mode=norm_mode,
             percentile_val=percentile_val,
             min_threshold=min_thresh,
             fixed_vmax=fixed_vmax,
+            scale_type=scale_type,
+            min_vmax_floor=min_vmax_floor,
         )
 
         # カラーマップ適用
@@ -349,12 +419,18 @@ def main():
                 rgb_pixel_buffer=cached_rgb_buffer,
             )
 
-            density_rgb = apply_gaussian_blur(rgb_counts["all"], sigma=blur_sigma * 2.0)
+            rgb_raw = rgb_counts["all"]
+            if do_spatial_filter and spatial_ksize > 1:
+                rgb_raw = apply_spatial_median_filter(rgb_raw, ksize=spatial_ksize)
+
+            density_rgb = apply_gaussian_blur(rgb_raw, sigma=blur_sigma * 2.0)
             norm_rgb, vmax_rgb = normalize_heatmap(
                 density_map=density_rgb,
                 mode=norm_mode,
                 percentile_val=percentile_val,
                 min_threshold=min_thresh,
+                scale_type=scale_type,
+                min_vmax_floor=min_vmax_floor,
             )
             color_rgb_bgr, alpha_mask_rgb = colorize_heatmap(norm_rgb, colormap_name=cmap_name)
             rendered_rgb = blend_heatmap_with_background(
@@ -392,12 +468,16 @@ def main():
     if config["output"].get("save_total_heatmap", True):
         logger.info("=== 5. Rendering Total Accumulated Heatmap ===")
         total_counts = accumulator.total_uv_counts["all"]
+        if do_spatial_filter and spatial_ksize > 1:
+            total_counts = apply_spatial_median_filter(total_counts, ksize=spatial_ksize)
         total_density = apply_gaussian_blur(total_counts, sigma=blur_sigma * 1.5)
         total_norm, total_vmax = normalize_heatmap(
             density_map=total_density,
             mode="percentile",
             percentile_val=98.0,
             min_threshold=0.01,
+            scale_type="sqrt",
+            min_vmax_floor=5.0,
         )
         total_color_bgr, total_alpha = colorize_heatmap(total_norm, colormap_name=cmap_name)
         total_rendered = blend_heatmap_with_background(
