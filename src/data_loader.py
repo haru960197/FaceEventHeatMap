@@ -197,8 +197,8 @@ class RGBFrameReader:
             return None
 
         elif self.is_video and self.cap is not None:
-            # 0-indexed に変換 (frame_index が 1-based の場合に対応)
-            idx = max(0, frame_index - 1)
+            # sync_log.csv は 0-indexed (0 〜 N-1)
+            idx = frame_index
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = self.cap.read()
             if ret:
