@@ -88,20 +88,13 @@ def detect_hot_pixels(
     mean_3x3 = uniform_filter(event_counts, size=3)
     neighbor_mean = (9.0 * mean_3x3 - event_counts) / 8.0
 
-    # 5x5 広域平均（中心ピクセルを除外）
-    mean_5x5 = uniform_filter(event_counts, size=5)
-    neighbor_mean_5x5 = (25.0 * mean_5x5 - event_counts) / 24.0
-
     # 近傍比率の計算
     ratio = np.zeros_like(event_counts)
     active_mask = event_counts >= min_count
     ratio[active_mask] = event_counts[active_mask] / np.maximum(neighbor_mean[active_mask], 1.0)
 
-    ratio_5x5 = np.zeros_like(event_counts)
-    ratio_5x5[active_mask] = event_counts[active_mask] / np.maximum(neighbor_mean_5x5[active_mask], 1.0)
-
-    # 判定条件: 3x3 比率 または 5x5 比率 (クラスタノイズ対応) または 最大レート
-    ratio_hot = ((ratio >= ratio_threshold) | (ratio_5x5 >= ratio_threshold * 1.5)) & (event_counts >= min_count)
+    # 判定条件: 3x3 近傍比率 または 最大レート
+    ratio_hot = (ratio >= ratio_threshold) & (event_counts >= min_count)
     rate_hot = rate_hz >= max_rate_hz
 
     # 境界マージン
