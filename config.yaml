@@ -10,7 +10,7 @@ input:
   transform_matrix_file: "transform_matrix.json"
   calibration_file: "calibration.json"
   # オプション: RGB動画または画像連番ディレクトリ (RGBオーバーレイ時に使用)
-  rgb_source: "" # 例: "input/rgb_video.mp4" または "input/rgb_images"
+  rgb_source: "input/video.mp4" # 例: "input/video_1.mp4" または "input/rgb_images"
 
 # 出力設定
 output:
@@ -38,7 +38,7 @@ modes:
   # 標準顔 UV 展開図へのマッピング
   uv_map: false
   # 実 RGB 画像へのオーバーレイ (rgb_source またはランドマーク背景が必要)
-  rgb_overlay: false
+  rgb_overlay: true
 
 # 標準顔 (Canonical) テンプレート設定
 canonical_space:
@@ -90,5 +90,5 @@ polarity:
 camera:
   event_width: 320
   event_height: 320
-  rgb_width: 1920
-  rgb_height: 1080
+  rgb_width: 320
+  rgb_height: 320
