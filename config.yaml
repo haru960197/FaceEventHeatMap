@@ -67,6 +67,28 @@ visualization:
   # タイムスタンプ・情報テキストを描画するか
   draw_info_overlay: true
 
+# ノイズ抑制・ホットピクセルフィルタ設定
+filter:
+  # 統計的ホットピクセル (異常振動・定常異常発火) 検出・除去
+  hot_pixel:
+    enabled: true
+    ratio_threshold: 3.5          # 近傍平均に対する比率閾値 (3.0〜5.0 推奨)
+    min_count: 500                # 判定対象とする最小累積イベント数
+    max_rate_hz: 800.0            # 許容最大発火率 (Hz)
+    border_margin: 2              # センサー最外周マージン (px, 0で無効)
+    save_mask_image: true         # output/hot_pixels_mask.png を保存するか
+    save_report_csv: true         # output/hot_pixels_report.csv を保存するか
+
+  # 不応期フィルタ (高周波振動・連射ノイズの抑制)
+  refractory:
+    enabled: true
+    period_us: 500.0              # 不応期 (マイクロ秒, 500us = 0.5ms)
+
+  # 空間ノイズ抑制 (ヒートマップ平滑化前の孤立スパイク除去)
+  spatial:
+    enabled: true
+    median_ksize: 3               # メディアンフィルタのカーネルサイズ (3 または 0で無効)
+
 # 正規化設定
 normalization:
   # 正規化モード:

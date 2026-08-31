@@ -118,9 +118,41 @@ visualization:
   draw_colorbar: true        # カラーバーの描画
   draw_info_overlay: true    # タイムスタンプ・イベント数の表示
 
+# ノイズ抑制・ホットピクセルフィルタ設定
+filter:
+  hot_pixel:
+    enabled: true              # 統計的ホットピクセル除去を有効化
+    ratio_threshold: 3.5       # 近傍平均発火数に対する比率閾値 (3.0〜5.0 推奨)
+    min_count: 500             # 判定対象とする最小累積イベント数
+    max_rate_hz: 800.0         # 許容最大発火率 (Hz)
+    border_margin: 2           # センサー最外周マージン (px)
+    save_mask_image: true      # output/hot_pixels_mask.png を出力
+    save_report_csv: true      # output/hot_pixels_report.csv を出力
+  refractory:
+    enabled: true              # 不応期フィルタ (高周波振動ノイズ抑制)
+    period_us: 500.0           # 不応期 (マイクロ秒, 500us = 0.5ms)
+  spatial:
+    enabled: true              # 空間メディアンフィルタ (ブラー前スパイク除去)
+    median_ksize: 3            # カーネルサイズ (3 または 0で無効)
+
 # 正規化設定
 normalization:
   mode: "percentile"         # "percentile" (ホットピクセル除外), "max", "fixed"
   percentile_val: 99.0       # 上位パーセンタイル値
   min_threshold: 0.05        # 最小表示閾値
 ```
+
+---
+
+## ホットピクセル・異常振動の抑制機能について
+
+イベントカメラでは、センサー回路の微小なリーク電流や高周波振動により、特定のピクセルが持続的・超高頻度に発火し続ける「ホットピクセル」が発生することがあります。本システムでは、以下の多層フィルタによりこれらを自動的かつ安全に抑制します：
+
+1. **統計的ホットピクセル検出 (`filter.hot_pixel`)**:
+   - イベントストリーム全体から各ピクセルの発火総数を集計し、周囲 $3\times 3$ 近傍の平均発火数に対する比率（`ratio_threshold`）や最大発火率（`max_rate_hz`）、センサー端マージン（`border_margin`）に基づいてホットピクセルを自動特定し、イベントを除去します。
+   - 検出結果は `output/hot_pixels_mask.png`（視覚的マスク）および `output/hot_pixels_report.csv`（座標・発火数・比率一覧）として出力されます。
+2. **不応期フィルタ (`filter.refractory`)**:
+   - 同一ピクセルにおいて、直前の発火からの時間差 $\Delta t < 500\ \mu\text{s}$ の連射イベントを物理的に破棄し、高周波振動（Flicker noise）を抑制します。
+3. **空間メディアンフィルタ (`filter.spatial`)**:
+   - ヒートマップのガウシアンブラー平滑化直前に $3\times 3$ メディアンフィルタを適用し、孤立した微小スパイクが円形に広がって赤く残るのを完全に防止します。
+
